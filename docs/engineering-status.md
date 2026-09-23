@@ -32,15 +32,18 @@
 
 | 检查 | 本地结果 | 证据边界 |
 | --- | --- | --- |
-| `pytest -q` | 40 项通过 | SQLite + 持久检查点；受控 FakeGateway / httpx.MockTransport |
+| `pytest -q` | 本地 41 项通过 | SQLite + 持久检查点；受控 FakeGateway / httpx.MockTransport |
+| GitHub CI 数据库矩阵 | SQLite / PostgreSQL 各 41 项通过 | PostgreSQL 17 实例与真实持久检查点；模型仍为受控响应 |
 | `ruff check src tests migrations` | 通过 | Python 静态检查 |
 | `aifanyi migrate`、`aifanyi init` | 通过 | 本地 SQLite 初始化；profile 仍为 draft |
 | `alembic check` | 无新增迁移差异 | ORM 与迁移一致 |
 | `pip check` | 无依赖冲突 | 已安装 Python 3.12 环境 |
 | `npm --prefix apps/chat run build` | 通过 | TypeScript 检查与 Vite 生产构建 |
 | 浏览器冒烟 | 通过 | 测试响应驱动的真实 API/Worker + Chromium：提交、最终译文、刷新恢复；无页面异常；390px 视口无横向溢出。未覆盖完整视觉/交互回归 |
-| PostgreSQL / Celery / Docker | 提供实现和 CI/部署配置 | 本地尚无实际容器栈验收结果 |
+| Celery / 完整 Compose 栈 | 提供实现和部署配置 | 尚无 API + Celery + Redis + 双真实模型完整部署栈验收结果 |
 | 真实模型 / GPU / 业务盲评 | 未执行 | 没有端点凭据、实际 GPU 或已标注业务测试集 |
+
+验证的代码提交为 [`31c4332`](https://github.com/xzhencheng/aifanyi/commit/31c4332915fc5a2930dbca86380881735a2b1298)，[GitHub CI](https://github.com/xzhencheng/aifanyi/actions/runs/35818029044) 三个作业均成功。PostgreSQL 首轮迁移比较发现 LangGraph 自管表被误判为待删除对象，已划分迁移管理范围并增加回归测试；其他业务 schema 差异仍会报错。
 
 自动化测试覆盖：
 
@@ -68,7 +71,7 @@
 5. **AUTH-01 / NFR**：完整组织与租户管理、统一资源权限审计、限流、加密/Secret 轮转流程、持久表不可变约束和完整并发验证未完成。测试不等价于安全审计。
 6. **OPS-01**：协调数据保留和清理、审计检索/指标/告警、数据库备份恢复、Celery 崩溃/Redis 丢失/长模型调用的容量与恢复实测、容器镜像 digest 固定和部署扫描尚未完成。
 7. **CHAT-02**：现有页面支持修订与确认，误报/可接受 minor 的复杂裁决先用 API；完整浏览器端到端回归、生产 OIDC 登录流程和无障碍验证仍需补齐。
-8. **Spec 全量验收**：43 个有效 AC 和全部 NFR 没有完成验收。现有 40 项程序测试与 AC 不是一一对应关系，不报告“40/43 通过率”。
+8. **Spec 全量验收**：43 个有效 AC 和全部 NFR 没有完成验收。现有 41 项程序测试与 AC 不是一一对应关系，不报告“41/43 通过率”。
 
 ## 5. 下一实施顺序
 
