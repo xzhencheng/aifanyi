@@ -1,0 +1,75 @@
+x-app: &app
+  build: .
+  image: aifanyi:local
+  env_file: .env
+  environment: &app-environment
+    AIFANYI_DATABASE_URL: postgresql+psycopg://aifanyi:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/aifanyi
+    AIFANYI_CHECKPOINT_URL: postgresql://aifanyi:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/aifanyi
+    AIFANYI_REDIS_URL: redis://redis:6379/0
+    AIFANYI_DISPATCH: celery
+  restart: unless-stopped
+  init: true
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: aifanyi
+      POSTGRES_DB: aifanyi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U aifanyi -d aifanyi']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  redis:
+    image: redis:7.4-alpine
+    command: [redis-server, --appendonly, 'yes']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  initialize:
+    <<: *app
+    command: [sh, -c, 'aifanyi migrate && aifanyi init']
+    restart: 'no'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  api:
+    <<: *app
+    ports:
+      - '127.0.0.1:8000:8000'
+    depends_on:
+      initialize:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://localhost:8000/health/ready", timeout=3)']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  worker:
+    <<: *app
+    command: [celery, -A, 'aifanyi.worker:celery', worker, --loglevel=INFO, --concurrency=2]
+    depends_on:
+      initialize:
+        condition: service_completed_successfully
+  scheduler:
+    <<: *app
+    command: [celery, -A, 'aifanyi.worker:celery', beat, --loglevel=INFO, --schedule=/tmp/aifanyi-celerybeat]
+    depends_on:
+      initialize:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-data:
+  redis-data:

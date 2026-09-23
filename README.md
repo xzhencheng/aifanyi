@@ -1,52 +1,76 @@
 # AI 翻译平台
 
-面向企业业务场景的 AI 多语言翻译 Agent。一期集中建设完整后端翻译流程，通过对话提交文本、补充上下文、解释译法及局部重译。
-
-项目仓库：https://github.com/xzhencheng/aifanyi
+准确性优先的企业翻译 Agent：**Hy-MT2-7B 初译 → 程序检查 → 现有 Qwen 3.5 对照原文审校 → 有限修复 → 结果或人工待审**。一期支持粘贴文本、批量文本与对话，暂不做任何文件翻译。
 
 ## 当前状态
 
-项目设计阶段。2026-09-23 按用户要求更新为 v1.1：一期暂缓全部文件翻译，模型初定 Hy-MT2-7B 初译＋现有私有 Qwen 3.5 审校/修复。尚未实现可运行的后端、对话入口或部署配置；本文能力均为规划。
+已开始按 [Spec v1.1](docs/spec.md) 实施，交付 **v0.1 工程实现**：FastAPI 后端、持久化 LangGraph 翻译流程、Worker、对话 API/SSE、React 聊天页、基础知识治理与模型配置接口，以及迁移和部署配置。
 
-需求来源：用户提供的《日立电梯 AI 翻译业务方案》V1.1。仓库文档提炼通用产品需求；客户原始方案、真实业务文档与语料由项目外部管理。
+**这不是完整一期验收。** 本次自动化验证使用受控模型响应；尚未连接真实 Hy-MT2-7B / Qwen 3.5，没有业务准确率、GPU 容量或生产性能结论。全部已做、未做和验证边界见 [实施状态](docs/engineering-status.md)。
 
-## 一期范围
+## 启动开发环境
 
-- 中文、英文、日文双向互译，模型服务可替换。
-- 完整后端 Agent：上下文与知识装配、初译、程序检查、原文审校、有限修复、人工待审、版本与审计。
-- 对话 API 和轻量聊天入口：首次翻译、多轮澄清、译法解释、局部重译、反馈及断线后结果恢复。
-- 文本同步、长文本/批量文本异步 REST API，与对话共用同一翻译内核。
-- 术语库、翻译记忆库、翻译规则库及任务级版本快照。
-- 本次、个人、项目、企业四类反馈作用范围与审核发布流程。
-- 调用系统清单、签名回调、失败重试、权限隔离和审计。
+需要 Python **3.12**、Node **24**。先安装依赖、创建本地配置：
 
-一期不做任何文件上传、解析、翻译、回填或下载，包括 Word、Excel、PDF、图片、扫描件、PPT；不建设完整管理工作台，不进行模型微调。知识维护和审核能力先通过后端 API 提供。
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.lock
+pip install --no-deps -e .
+npm --prefix apps/chat ci
+npm --prefix apps/chat run build
+cp .env.example .env
+```
 
-对话入口只承担聊天、状态、原译对照、反馈和有权限的审阅提交；业务流程全部由后端执行，不依赖聊天模型自由发挥。
+在 `.env` 中填入至少 24 字符的随机 `AIFANYI_DEV_TOKEN`、两个私有模型端点及 Qwen 的实际 model ID。模型密钥只写本地配置或部署 Secret。随后执行：
 
-## 项目文档
+```bash
+aifanyi migrate
+aifanyi init
+aifanyi validate-models
+```
+
+`init` 创建 `project_default` 和**草稿**模型配置。`validate-models` 会真实调用模型；探测失败时配置不会放行。当前适配器要求 `/v1/models`、`/v1/chat/completions` 和包含聊天模板的 `/tokenize`，详见 [运行手册](docs/runbook.md)。
+
+分别在两个终端运行：
+
+```bash
+# 终端一，先激活 .venv
+uvicorn aifanyi.api:app --host 127.0.0.1 --port 8000
+```
+
+```bash
+# 终端二，先激活 .venv
+aifanyi worker
+```
+
+打开 <http://127.0.0.1:8000>，填入本地开发令牌，选择语言并粘贴文本。API 交互文档在 `/docs`。开发令牌只适用于本地开发，生产模式要求企业 OIDC、PostgreSQL 和 Celery。
+
+没有模型服务时，可以完成迁移、查看页面和运行测试；业务翻译会明确拒绝未验证配置。运行时没有模拟翻译或备用公共模型。
+
+## 验证与部署
+
+```bash
+ruff check src tests migrations
+pytest -q
+alembic check
+npm --prefix apps/chat run build
+```
+
+仓库提供 `Dockerfile` 与 [compose.yaml](compose.yaml)，包括 PostgreSQL、Redis、API、Worker 和调度器；默认仅将应用绑定到服务器本机端口。启动顺序、模型接入、身份登记、知识审核及回调见 [运行手册](docs/runbook.md)。Docker 配置不包含 GPU 推理服务，也不启动或改动现有 Qwen。
+
+Hy-MT2-7B BF16 的低并发起步预算为 **1 张 24 GB GPU、64 GB RAM、16 vCPU、200 GB 可用 NVMe**，先用 8K 总窗口、并发 1；48 GB GPU 档留有更大余量。这是待实测预算，完整估算见 [模型部署与服务器要求](docs/model-deployment.md)。
+
+## 文档
 
 | 文档 | 用途 |
 | --- | --- |
-| [一期需求基线](docs/requirements.md) | 功能范围、业务规则、接口意图和验收目标 |
-| [技术方案 v1.1](docs/technical-design.md) | 后端 Agent、对话编排、Hy-MT2-7B＋Qwen 3.5、准确性与评测 |
-| [实施 Spec v1.1](docs/spec.md) | 节点、会话/任务/API 契约、状态、验收用例和追踪矩阵 |
-| [模型部署与服务器要求](docs/model-deployment.md) | Hy-MT2-7B 显存估算、24/48 GB 配置、现有 Qwen 3.5 接入 |
-| [实施与开发清单](docs/implementation-plan.md) | 阶段任务、交付条件与待确定的工程决策 |
+| [一期需求基线](docs/requirements.md) | 范围和业务目标 |
+| [技术方案](docs/technical-design.md) | 架构、准确性流程与模型选择 |
+| [实施 Spec](docs/spec.md) | 完整一期契约和验收要求 |
+| [运行手册](docs/runbook.md) | 本版实际可执行的启动与操作步骤 |
+| [实施状态](docs/engineering-status.md) | 代码覆盖、测试证据、限制和剩余工作 |
+| [实施与开发清单](docs/implementation-plan.md) | 分阶段完成条件 |
+| [模型部署与服务器要求](docs/model-deployment.md) | Hy-MT 资源与已有 Qwen 接入 |
 
-## 开发约定
-
-1. 以需求基线、技术方案和 Spec 为实现依据，变更范围或质量门槛时同步更新文档。
-2. 后端采用 Python/FastAPI、LangGraph、PostgreSQL、Celery/Redis；轻量对话页为薄客户端。版本在工程初始化时锁定，一期不依赖文件对象存储。
-3. 模型调用经统一网关；Hy-MT2-7B 独立部署，Qwen 3.5 复用现有服务，分别配置角色、预算和并发。
-4. 所有任务在创建时固定模型、提示模板及知识版本；会话历史与原文版本分开管理。
-5. 密钥、生产配置、上传文件、客户词表及真实翻译结果不得提交版本库。
-6. 后续直接在 `main` 分支修改和提交，无需新建分支或 Pull Request；提交前读取最新状态，保留已有修改。
-
-## 首个开发里程碑
-
-先接通 Hy-MT2-7B 与现有 Qwen 3.5，建立业务质量基线和容量记录；打通一轮“对话输入 → 翻译 → 审校 → 结果/待审”。
-
-随后补齐多轮上下文、定向修复、知识治理、持久任务、人工审阅与准确性评测。默认 `accuracy_first`，不以任务成功或语言流畅代替语义正确。未审校初译不能作为对话最终答案发出。
-
-目前没有可用的启动命令。工程初始化完成后补充依赖安装、配置、启动和验证说明。
+需求来源为用户提供的《日立电梯 AI 翻译业务方案》V1.1。客户原始方案、语料、词表、真实译文与生产配置不进入仓库。开发按用户要求直接提交 `main`。
